@@ -96,6 +96,24 @@ class L2Forwarding(app_manager.RyuApp):
 
         ###############################
 
+        if eth.ethertype == ether.ETH_TYPE_ARP:
+            arp_msg = pkt.get_protoco(arp.arp)
+            if (arp_msg.dst_ip == self.interfaces[in_port][0] and arp_msg.opcode == arp.ARP_REQUEST):
+                e = ethernet.ethernet(dst = src, 
+                    src = self.macs[in_port],
+                    ethertype=ether.ETH_TYPE_ARP)
+                a = arp.arp(opcode = arp.ARP_REPLY, 
+                    src_mac = self.macs[in_port], src_ip=arp_msg.dst_ip, 
+                    dst_mac = src, std_ip = arp_msg.src_ip)
+                p = packet.Packet()
+                p.add_protocol(e)
+                p.add_protocol(a)
+                self.send_packet(datapath, in_port, p)
+
+
+
+        ###############################
+
     #  Inserta una entrada a la tabla de flujo.
     def add_flow(self, datapath, priority, match, actions, buffer_id=None):
         ofproto = datapath.ofproto
