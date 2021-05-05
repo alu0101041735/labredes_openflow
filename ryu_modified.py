@@ -10,10 +10,15 @@ from ryu.lib.packet import ethernet
 from ryu.base import app_manager
 from ryu.lib import mac
 from ryu.lib.mac import haddr_to_bin
+from ryu.lib.packet import arp
+from ryu.lib.packet import ipv4
+from ryu.lib.packet import icmp
+from ryu.ofproto import ether
 
 class L2Forwarding(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     mac_to_port = dict()
+    ip_to_mac = list()
 
     def __init__(self, *args, **kwargs):
         super(L2Forwarding, self).__init__(*args, **kwargs)
@@ -78,7 +83,6 @@ class L2Forwarding(app_manager.RyuApp):
 
         ###############################
 
-
         if (haddr_to_bin(dst) == mac.BROADCAST) or mac.is_multicast(haddr_to_bin(dst)): 
             actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
             match = ofp_parser.OFPMatch(in_port=in_port, eth_dst=dst)
@@ -93,22 +97,54 @@ class L2Forwarding(app_manager.RyuApp):
                 match = ofp_parser.OFPMatch(in_port=in_port, eth_dst=dst)
                 self.add_flow(datapath, 1, match, actions)
 
-
         ###############################
 
         if eth.ethertype == ether.ETH_TYPE_ARP:
-            arp_msg = pkt.get_protoco(arp.arp)
+            print("arp message")
+            arp_msg = pkt.get_protocol(arp.arp)
+
+            import pdb;pdb.set_trace()
+            ip_mac = (arp_msg.src_ip, arp_msg.src_mac)
+            self.ip_to_mac.append(ip_mac)
+
             if (arp_msg.dst_ip == self.interfaces[in_port][0] and arp_msg.opcode == arp.ARP_REQUEST):
-                e = ethernet.ethernet(dst = src, 
-                    src = self.macs[in_port],
-                    ethertype=ether.ETH_TYPE_ARP)
-                a = arp.arp(opcode = arp.ARP_REPLY, 
-                    src_mac = self.macs[in_port], src_ip=arp_msg.dst_ip, 
-                    dst_mac = src, std_ip = arp_msg.src_ip)
-                p = packet.Packet()
-                p.add_protocol(e)
-                p.add_protocol(a)
-                self.send_packet(datapath, in_port, p)
+                print("dst ip on interfaces")
+                if arp_msg.dst_ip in self.ip_to_mac:
+                    print("dst mac on list, reply to original host")
+                    e = ethernet.ethernet(dst = src, 
+                        src = self.mac_to_port[dst],
+                        ethertype=ether.ETH_TYPE_ARP)
+                    a = arp.arp(opcode = arp.ARP_REPLY, 
+                        src_mac = self.mac_to_port[dst], src_ip=arp_msg.dst_ip, 
+                        dst_mac = src, dst_ip = arp_msg.src_ip)
+
+                    p = packet.Packet()
+                    p.add_protocol(e)
+                    p.add_protocol(a)
+
+                    self.send_packet(datapath, in_port, p)
+
+                else:
+                    print("Dst mac not on list, request to host")
+                    e = ethernet.ethernet(src = arp_msg.src_mac,
+                        ethertype=ether.ETH_TYPE_ARP)
+                    a = arp.arp(opcode = arp.ARP_REQUEST, 
+                        src_mac = arp_msg.src_mac, src_ip=arp_msg.src_ip, 
+                        dst_ip = arp_msg.dst_ip)
+
+                    p = packet.Packet()
+                    p.add_protocol(e)
+                    p.add_protocol(a)
+
+                    self.send_packet(datapath, self.mac_to_port[dst].value, p)
+            else:
+                print("I don't know anything")
+                # Inundamos
+                actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
+                match = ofp_parser.OFPMatch(in_port=in_port, eth_dst=dst)
+                self.add_flow(datapath, 1, match, actions)
+
+                
 
 
 
