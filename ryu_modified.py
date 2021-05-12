@@ -103,7 +103,7 @@ class L2Forwarding(app_manager.RyuApp):
             print("arp message")
             arp_msg = pkt.get_protocol(arp.arp)
 
-            import pdb;pdb.set_trace()
+            import ipdb;ipdb.set_trace()
             ip_mac = (arp_msg.src_ip, arp_msg.src_mac)
             self.ip_to_mac.append(ip_mac)
 
