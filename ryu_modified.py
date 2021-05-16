@@ -78,48 +78,49 @@ class L2Forwarding(app_manager.RyuApp):
 
         src = eth.src
 
+        # Introducimos el puerto de entrada en el diccionario
         self.mac_to_port[src] = in_port
 
-        # import pdb;pdb.set_trace()
 
         ###############################
+        # Si no es un paquete ARP
         if eth.ethertype != 0x0806:
 
-            print("NOT ARP")
+            # Comprobamos si es una trama broadcast o multicast
             if ((haddr_to_bin(dst) == mac.BROADCAST) or mac.is_multicast(haddr_to_bin(dst))):   
-                actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
+                # Inundamos
+                actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)] 
                 match = ofp_parser.OFPMatch(in_port=in_port, eth_dst=dst)
-                self.add_flow(datapath, 1, match, actions)
+                self.add_flow(datapath, 1, match, actions) 
         
             else:
                 if dst in self.mac_to_port.keys():
+                    # Enviamos el paquete al destino
                     self.send_packet(datapath, self.mac_to_port[dst], pkt)
 
                 else:
+                    # Inundamos
                     actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
                     match = ofp_parser.OFPMatch(in_port=in_port, eth_dst=dst)
                     self.add_flow(datapath, 1, match, actions)
 
         ###############################
 
+        # Si es un paquete ARP
         if eth.ethertype == 0x0806:
-            print("arp message")
             arp_msg = pkt.get_protocol(arp.arp)
             
-            if arp_msg.src_ip not in self.ip_to_mac.keys():
-                self.ip_to_mac[arp_msg.src_ip] = arp_msg.src_mac
+            # Añadimos ip y mac al diccionario 
+            self.ip_to_mac[arp_msg.src_ip] = arp_msg.src_mac
 
             if (arp_msg.opcode == arp.ARP_REQUEST):
-                print("request")
 
                 if arp_msg.dst_ip in self.ip_to_mac.keys():
-                    print("dst mac on list, reply to original host")
 
                     dst_mac = self.ip_to_mac[arp_msg.dst_ip]
                     dst_port = self.mac_to_port[dst_mac]
                     
-
-                    # import pdb;pdb.set_trace()
+                    # Creamos protocolos ethernet y arp
                     e = ethernet.ethernet(dst = arp_msg.src_mac, 
                         src = dst_port,
                         ethertype=0x0806)
@@ -135,10 +136,8 @@ class L2Forwarding(app_manager.RyuApp):
                     self.send_packet(datapath, in_port, p)
 
                 else:
-                    print("Dst mac not on list, request to host")
 
-                    # import pdb;pdb.set_trace()
-                    
+                    # Creamos protocolos ethernnet y arp para broadcast
                     e = ethernet.ethernet(dst = "ff:ff:ff:ff:ff:ff", 
                         src = src,
                         ethertype=0x0806)
@@ -152,14 +151,7 @@ class L2Forwarding(app_manager.RyuApp):
 
                     self.send_packet(datapath, ofproto.OFPP_FLOOD, p)
 
-                    """
-                    actions = [ofp_parser.OFPActionOutput(ofproto.OFPP_FLOOD)]
-                    match = ofp_parser.OFPMatch(in_port=in_port, eth_dst="ff:ff:ff:ff:ff:ff")
-                    self.add_flow(datapath, 1, match, actions)
-                    """
-
             elif (arp_msg.opcode == arp.ARP_REPLY):
-                print("Reply")
                 self.send_packet(datapath, self.mac_to_port[dst], pkt)
 
 
